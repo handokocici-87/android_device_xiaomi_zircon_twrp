@@ -18,8 +18,8 @@ jobs:
       run: |
         mkdir fox && cd fox
         repo init -u https://gitlab.com/OrangeFox/sync.git -b master
-        # Ganti URL di bawah ini dengan link device tree zircon yang benar jika berbeda
-        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b main device/xiaomi/zircon
+        # Menggunakan branch a15 karena berisi file dtb dan omni_zircon.mk
+        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
         
     - name: Sync & Build
       run: |
@@ -33,3 +33,4 @@ jobs:
       with:
         name: OrangeFox-Recovery
         path: fox/out/target/product/zircon/recovery.img
+        
