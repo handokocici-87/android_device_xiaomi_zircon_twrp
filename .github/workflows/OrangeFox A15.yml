@@ -94,4 +94,3 @@ EOF
       with:
         name: OrangeFox-Zircon-A15-Absolute-Truth
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
-        
