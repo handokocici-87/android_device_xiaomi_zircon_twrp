@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Syntax Fixed
+name: Build OrangeFox Zircon A15 - Indentation Fix
 
 on:
   workflow_dispatch:
@@ -63,7 +63,7 @@ jobs:
         fi
 
         # 2. PERBAIKAN AKAR MASALAH: Timpa isi omni_zircon.mk
-        # PENTING: Gunakan 'EOF' (dengan kutip) agar $() tidak dibaca YAML
+        # PENTING: Semua baris di bawah 'EOF' HARUS memiliki spasi yang sama persis
         cat > $DT_DIR/omni_zircon.mk << 'EOF'
 # Inherit from common OrangeFox configuration
 $(call inherit-product, vendor/omni/config/common.mk)
@@ -92,6 +92,6 @@ EOF
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Zircon-A15-Syntax-Fixed
+        name: OrangeFox-Zircon-A15-Indentation-Fixed
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
         
