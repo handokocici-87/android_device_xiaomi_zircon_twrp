@@ -1,0 +1,96 @@
+name: Build OrangeFox Zircon A15 - Absolute Truth
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Free Disk Space
+      run: |
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
+        sudo apt-get clean
+        df -h
+
+    - name: Build Environment Setup
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32z1-dev lib32stdc++6 \
+          libncurses6 libncursesw6 x11proto-core-dev libx11-dev lib32z-dev \
+          ccache libgl1-mesa-dev libxml2-utils xsltproc unzip python3 \
+          bc bison cpio lzop pngcrush rsync schedtool squashfs-tools \
+          libssl-dev liblz4-tool imagemagick lib32readline-dev
+        
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
+        git config --global user.email "builder@github.com"
+        git config --global user.name "GitHub Builder"
+
+    - name: Clone Source & Device Tree
+      run: |
+        mkdir -p $HOME/OrangeFox_Workspace
+        cd $HOME/OrangeFox_Workspace
+        git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
+        cd fox_sync
+        chmod +x orangefox_sync.sh
+        ./orangefox_sync.sh --branch 12.1 --path $HOME/OrangeFox_Workspace/fox_src
+        cd $HOME/OrangeFox_Workspace/fox_src
+        mkdir -p device/xiaomi
+        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
+
+    - name: Fix Storage & Overwrite omni_zircon.mk
+      run: |
+        DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
+        
+        # 1. Fix Fstab (Storage Issue)
+        FSTAB_FILE=""
+        if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
+            FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
+        elif [ -f "$DT_DIR/recovery/root/fstab.zircon" ]; then
+            FSTAB_FILE="$DT_DIR/recovery/root/fstab.zircon"
+        fi
+        
+        if [ -n "$FSTAB_FILE" ]; then
+            sed -i 's/,noauto//g' "$FSTAB_FILE"
+            sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
+            echo "✅ Fstab fixed for storage mount."
+        fi
+
+        # 2. PERBAIKAN AKAR MASALAH: Timpa isi omni_zircon.mk dengan standar OrangeFox 12.1
+        # File aslimu kemungkinan corrupt/kosong, jadi kita ganti isinya yang benar
+        cat > $DT_DIR/omni_zircon.mk << 'EOF'
+# Inherit from common OrangeFox configuration
+$(call inherit-product, vendor/omni/config/common.mk)
+
+# Inherit from zircon device
+$(call inherit-product, device/xiaomi/zircon/twrp_zircon.mk)
+
+# OrangeFox Specifics
+OF_MAINTAINER := HandokoKicici
+OF_VERSION := alpha
+TARGET_RECOVERY_PIXEL_FORMAT := RGBX_8888
+TW_THEME := portrait_hdpi
+EOF
+        echo "✅ omni_zircon.mk overwritten with valid OrangeFox 12.1 content!"
+
+    - name: Build Recovery
+      run: |
+        cd $HOME/OrangeFox_Workspace/fox_src
+        source build/envsetup.sh
+        
+        # Sekarang lunch omni_zircon-eng PASTI BERJALAN karena filenya sudah valid
+        lunch omni_zircon-eng
+        
+        mka adbd recoveryimage -j$(nproc --all)
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OrangeFox-Zircon-A15-Absolute-Truth
+        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
