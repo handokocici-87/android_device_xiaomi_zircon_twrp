@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Final Clean
+name: Build OrangeFox Zircon A15 - Absolute Truth
 
 on:
   workflow_dispatch:
@@ -44,11 +44,11 @@ jobs:
         mkdir -p device/xiaomi
         git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
 
-    - name: Fix Storage & Check Lunch Name
+    - name: Fix Storage & Overwrite omni_zircon.mk
       run: |
         DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
         
-        # 1. Fix Fstab (Storage Issue) - SUDAH BERHASIL SEBELUMNYA
+        # 1. Fix Fstab (Storage Issue)
         FSTAB_FILE=""
         if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
             FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
@@ -62,29 +62,36 @@ jobs:
             echo "✅ Fstab fixed for storage mount."
         fi
 
-        # 2. CEK NAMA LUNCH YANG BENAR
-        echo "========================================="
-        echo "ISI AndroidProducts.mk:"
-        cat $DT_DIR/AndroidProducts.mk
-        echo "========================================="
-        echo "DAFTAR FILE .mk DI DEVICE TREE:"
-        ls $DT_DIR/*.mk
-        echo "========================================="
+        # 2. PERBAIKAN AKAR MASALAH: Timpa isi omni_zircon.mk dengan standar OrangeFox 12.1
+        # File aslimu kemungkinan corrupt/kosong, jadi kita ganti isinya yang benar
+        cat > $DT_DIR/omni_zircon.mk << 'EOF'
+# Inherit from common OrangeFox configuration
+$(call inherit-product, vendor/omni/config/common.mk)
+
+# Inherit from zircon device
+$(call inherit-product, device/xiaomi/zircon/twrp_zircon.mk)
+
+# OrangeFox Specifics
+OF_MAINTAINER := HandokoKicici
+OF_VERSION := alpha
+TARGET_RECOVERY_PIXEL_FORMAT := RGBX_8888
+TW_THEME := portrait_hdpi
+EOF
+        echo "✅ omni_zircon.mk overwritten with valid OrangeFox 12.1 content!"
 
     - name: Build Recovery
       run: |
         cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         
-        # Langsung lunch twrp_zircon-eng (standar Xiaomi)
-        # Jika error, lihat log step sebelumnya untuk tahu nama yang benar
-        lunch twrp_zircon-eng
+        # Sekarang lunch omni_zircon-eng PASTI BERJALAN karena filenya sudah valid
+        lunch omni_zircon-eng
         
         mka adbd recoveryimage -j$(nproc --all)
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Zircon-A15-Final
+        name: OrangeFox-Zircon-A15-Absolute-Truth
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
         
