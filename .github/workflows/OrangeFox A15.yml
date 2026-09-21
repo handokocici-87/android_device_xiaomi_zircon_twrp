@@ -11,7 +11,7 @@ jobs:
     # 1. Checkout Repository
     - uses: actions/checkout@v4
 
-    # 2. Bebaskan Ruang Disk (SANGAT PENTING agar tidak gagal di tengah jalan)
+    # 2. Bebaskan Ruang Disk (Wajib untuk build Android)
     - name: Free Disk Space
       run: |
         sudo rm -rf /usr/share/dotnet
@@ -20,7 +20,7 @@ jobs:
         sudo apt-get clean
         df -h
 
-    # 3. Install Dependencies (Sudah diperbaiki untuk Ubuntu 24.04)
+    # 3. Install Dependencies & Repo Tool
     - name: Build Environment Setup
       run: |
         sudo apt-get update
@@ -31,6 +31,12 @@ jobs:
           ccache libgl1-mesa-dev libxml2-utils xsltproc unzip python3 \
           bc bison cpio lzop pngcrush rsync schedtool squashfs-tools \
           libssl-dev liblz4-tool imagemagick lib32readline-dev
+        
+        # Install Repo Tool (Fix error "repo: command not found")
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
 
     # 4. Clone Source & Device Tree
     - name: Clone OrangeFox Source & Device Tree
@@ -46,7 +52,7 @@ jobs:
         cd fox
         source build/envsetup.sh
         lunch omni_zircon-eng
-        # Menggunakan mka dengan semua core CPU agar lebih cepat
+        # Menggunakan semua core CPU agar build lebih cepat
         mka adbd recoveryimage -j$(nproc --all)
         
     # 6. Upload Hasil Build
