@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Absolute Truth
+name: Build OrangeFox Zircon A15 - Syntax Fixed
 
 on:
   workflow_dispatch:
@@ -62,8 +62,8 @@ jobs:
             echo "✅ Fstab fixed for storage mount."
         fi
 
-        # 2. PERBAIKAN AKAR MASALAH: Timpa isi omni_zircon.mk dengan standar OrangeFox 12.1
-        # File aslimu kemungkinan corrupt/kosong, jadi kita ganti isinya yang benar
+        # 2. PERBAIKAN AKAR MASALAH: Timpa isi omni_zircon.mk
+        # PENTING: Gunakan 'EOF' (dengan kutip) agar $() tidak dibaca YAML
         cat > $DT_DIR/omni_zircon.mk << 'EOF'
 # Inherit from common OrangeFox configuration
 $(call inherit-product, vendor/omni/config/common.mk)
@@ -77,14 +77,14 @@ OF_VERSION := alpha
 TARGET_RECOVERY_PIXEL_FORMAT := RGBX_8888
 TW_THEME := portrait_hdpi
 EOF
-        echo "✅ omni_zircon.mk overwritten with valid OrangeFox 12.1 content!"
+        echo "✅ omni_zircon.mk overwritten successfully!"
 
     - name: Build Recovery
       run: |
         cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         
-        # Sekarang lunch omni_zircon-eng PASTI BERJALAN karena filenya sudah valid
+        # Lunch omni_zircon-eng (sekarang filenya sudah valid syntax-nya)
         lunch omni_zircon-eng
         
         mka adbd recoveryimage -j$(nproc --all)
@@ -92,5 +92,6 @@ EOF
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Zircon-A15-Absolute-Truth
+        name: OrangeFox-Zircon-A15-Syntax-Fixed
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
+        
