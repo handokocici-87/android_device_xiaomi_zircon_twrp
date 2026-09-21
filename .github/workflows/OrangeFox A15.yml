@@ -6,31 +6,53 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
     
+    steps:
+    # 1. Checkout Repository
+    - uses: actions/checkout@v4
+
+    # 2. Bebaskan Ruang Disk (SANGAT PENTING agar tidak gagal di tengah jalan)
+    - name: Free Disk Space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        sudo apt-get clean
+        df -h
+
+    # 3. Install Dependencies (Sudah diperbaiki untuk Ubuntu 24.04)
     - name: Build Environment Setup
       run: |
         sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip python3
-        
+        sudo apt-get install -y \
+          git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
+          gcc-multilib g++-multilib libc6-dev-i386 lib32z1-dev lib32stdc++6 \
+          libncurses6 libncursesw6 x11proto-core-dev libx11-dev lib32z-dev \
+          ccache libgl1-mesa-dev libxml2-utils xsltproc unzip python3 \
+          bc bison cpio lzop pngcrush rsync schedtool squashfs-tools \
+          libssl-dev liblz4-tool imagemagick lib32readline-dev
+
+    # 4. Clone Source & Device Tree
     - name: Clone OrangeFox Source & Device Tree
       run: |
         mkdir fox && cd fox
         repo init -u https://gitlab.com/OrangeFox/sync.git -b master
-        # Menggunakan branch a15 karena berisi file dtb dan omni_zircon.mk
+        # Mengambil device tree dari branch a15
         git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
         
+    # 5. Proses Build
     - name: Sync & Build
       run: |
         cd fox
         source build/envsetup.sh
         lunch omni_zircon-eng
-        mka adbd recoveryimage
+        # Menggunakan mka dengan semua core CPU agar lebih cepat
+        mka adbd recoveryimage -j$(nproc --all)
         
+    # 6. Upload Hasil Build
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Recovery
+        name: OrangeFox-Recovery-Zircon-A15
         path: fox/out/target/product/zircon/recovery.img
         
