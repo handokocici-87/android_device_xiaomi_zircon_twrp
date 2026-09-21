@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Standard 12.1
+name: Build OrangeFox Zircon A15 - Final Clean
 
 on:
   workflow_dispatch:
@@ -36,22 +36,19 @@ jobs:
       run: |
         mkdir -p $HOME/OrangeFox_Workspace
         cd $HOME/OrangeFox_Workspace
-        
-        # PERUBAHAN PENTING: Menggunakan branch 12.1 sesuai standar
         git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
         cd fox_sync
         chmod +x orangefox_sync.sh
         ./orangefox_sync.sh --branch 12.1 --path $HOME/OrangeFox_Workspace/fox_src
-        
         cd $HOME/OrangeFox_Workspace/fox_src
         mkdir -p device/xiaomi
         git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
 
-    - name: Fix Storage & Prepare Build
+    - name: Fix Storage & Check Lunch Name
       run: |
         DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
         
-        # 1. Fix Fstab (Storage Issue)
+        # 1. Fix Fstab (Storage Issue) - SUDAH BERHASIL SEBELUMNYA
         FSTAB_FILE=""
         if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
             FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
@@ -62,34 +59,32 @@ jobs:
         if [ -n "$FSTAB_FILE" ]; then
             sed -i 's/,noauto//g' "$FSTAB_FILE"
             sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
-            echo "Fstab fixed for storage."
+            echo "✅ Fstab fixed for storage mount."
         fi
 
-        # 2. Pastikan nama produk sesuai dengan standar TWRP/OrangeFox 12.1
-        # Biasanya device tree Xiaomi menggunakan prefix 'twrp_'
-        if [ -f "$DT_DIR/twrp_zircon.mk" ]; then
-            echo "Found twrp_zircon.mk, keeping original name."
-            # Tidak perlu rename paksa ke omni_ karena 12.1 lebih toleran
-        elif [ -f "$DT_DIR/omni_zircon.mk" ]; then
-            echo "Found omni_zircon.mk."
-        fi
+        # 2. CEK NAMA LUNCH YANG BENAR
+        echo "========================================="
+        echo "ISI AndroidProducts.mk:"
+        cat $DT_DIR/AndroidProducts.mk
+        echo "========================================="
+        echo "DAFTAR FILE .mk DI DEVICE TREE:"
+        ls $DT_DIR/*.mk
+        echo "========================================="
 
     - name: Build Recovery
       run: |
         cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         
-        # Coba lunch twrp_zircon-eng dulu (standar device tree Xiaomi)
-        lunch twrp_zircon-eng || {
-            echo "twrp_zircon failed, trying omni_zircon..."
-            lunch omni_zircon-eng
-        }
+        # Langsung lunch twrp_zircon-eng (standar Xiaomi)
+        # Jika error, lihat log step sebelumnya untuk tahu nama yang benar
+        lunch twrp_zircon-eng
         
         mka adbd recoveryimage -j$(nproc --all)
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Zircon-A15-Standard-12.1
+        name: OrangeFox-Zircon-A15-Final
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
         
