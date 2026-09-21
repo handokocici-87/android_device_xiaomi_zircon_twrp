@@ -14,9 +14,13 @@
 # limitations under the License.
 #
 
-PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_zircon.mk
+PRODUCT_MAKEFILES := \
+    $(LOCAL_DIR)/twrp_zircon.mk \
+    $(LOCAL_DIR)/omni_zircon.mk
 
 COMMON_LUNCH_CHOICES := \
     twrp_zircon-user \
     twrp_zircon-userdebug \
-    twrp_zircon-eng
+    twrp_zircon-eng \
+    omni_zircon-eng
+
