@@ -38,25 +38,27 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
         
-        # Konfigurasi Git (FIX: manifest default.xml not found)
+        # Konfigurasi Git (Wajib agar repo init berhasil)
         git config --global user.email "builder@github.com"
         git config --global user.name "GitHub Builder"
 
     # 4. Clone Source & Device Tree
     - name: Clone OrangeFox Source & Device Tree
       run: |
-        mkdir fox && cd fox
+        # Buat folder kerja utama
+        mkdir -p $HOME/OrangeFox_Workspace
+        cd $HOME/OrangeFox_Workspace
         
         # Clone script sync OrangeFox
         git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
         cd fox_sync
         
-        # Beri izin eksekusi dan jalankan script sync
+        # Beri izin eksekusi dan jalankan script sync dengan branch 14.1
         chmod +x orangefox_sync.sh
-        ./orangefox_sync.sh --branch master --path $(pwd)/../fox_src
+        ./orangefox_sync.sh --branch 14.1 --path $HOME/OrangeFox_Workspace/fox_src
         
         # Masuk ke folder source yang sudah disync
-        cd ../fox_src
+        cd $HOME/OrangeFox_Workspace/fox_src
         
         # Clone device tree zircon dari branch a15
         mkdir -p device/xiaomi
@@ -65,7 +67,7 @@ jobs:
     # 5. Proses Build
     - name: Sync & Build
       run: |
-        cd fox/fox_src
+        cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         lunch omni_zircon-eng
         # Menggunakan semua core CPU agar build lebih cepat
@@ -76,5 +78,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: OrangeFox-Recovery-Zircon-A15
-        path: fox/fox_src/out/target/product/zircon/recovery.img
+        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
         
