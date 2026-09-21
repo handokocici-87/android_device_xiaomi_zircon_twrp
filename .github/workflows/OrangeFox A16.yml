@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Anti Fail
+name: Build OrangeFox Zircon A16 - Anti Fail
 
 on:
   workflow_dispatch:
