@@ -8,19 +8,14 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    # 1. Checkout Repository Device Tree (untuk mengambil file mk terbaru)
-    - uses: actions/checkout@v4
-      with:
-        path: device_tree_source # Simpan di folder terpisah agar tidak tertimpa
-
-    # 2. Bebaskan Ruang Disk
+    # 1. Bebaskan Ruang Disk
     - name: Free Disk Space
       run: |
         sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
         sudo apt-get clean
         df -h
 
-    # 3. Install Dependencies & Repo Tool
+    # 2. Install Dependencies & Repo Tool
     - name: Build Environment Setup
       run: |
         sudo apt-get update
@@ -40,12 +35,13 @@ jobs:
         git config --global user.email "builder@github.com"
         git config --global user.name "GitHub Builder"
 
-    # 4. Clone Source & Device Tree
+    # 3. Clone Source & Device Tree
     - name: Clone OrangeFox Source & Device Tree
       run: |
         mkdir -p $HOME/OrangeFox_Workspace
         cd $HOME/OrangeFox_Workspace
         
+        # Sync OrangeFox 14.1
         git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
         cd fox_sync
         chmod +x orangefox_sync.sh
@@ -54,55 +50,23 @@ jobs:
         # Masuk ke folder source
         cd $HOME/OrangeFox_Workspace/fox_src
         
-        # Clone device tree zircon
+        # Clone device tree zircon (Branch a15 sudah berisi AndroidProducts.mk yang benar)
         mkdir -p device/xiaomi
         git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
 
-    # 5. Verifikasi & Perbaikan File Konfigurasi (PENTING!)
-    - name: Verify & Fix Lunch Combo
-      run: |
-        SRC_DIR=$HOME/OrangeFox_Workspace/fox_src
-        DT_DIR=$SRC_DIR/device/xiaomi/zircon
-        LOCAL_DT_DIR=$GITHUB_WORKSPACE/device_tree_source
-        
-        echo "=== Mengecek AndroidProducts.mk ==="
-        cat $DT_DIR/AndroidProducts.mk
-        
-        echo "=== Mengecek omni_zircon.mk ==="
-        if [ -f "$DT_DIR/omni_zircon.mk" ]; then
-            echo "File omni_zircon.mk DITEMUKAN di device tree."
-        else
-            echo "File omni_zircon.mk TIDAK ADA! Menyalin dari repository lokal..."
-            cp $LOCAL_DT_DIR/omni_zircon.mk $DT_DIR/omni_zircon.mk
-            echo "File berhasil disalin."
-        fi
-        
-        echo "=== Memastikan terdaftar di AndroidProducts.mk ==="
-        if grep -q "omni_zircon.mk" $DT_DIR/AndroidProducts.mk; then
-            echo "Sudah terdaftar dengan benar."
-        else
-            echo "Belum terdaftar! Menambahkan secara paksa..."
-            echo '    $(LOCAL_DIR)/omni_zircon.mk \' >> $DT_DIR/AndroidProducts.mk
-            echo '    omni_zircon-eng' >> $DT_DIR/AndroidProducts.mk # Tambah ke lunch choices jika perlu
-            cat $DT_DIR/AndroidProducts.mk
-        fi
-
-    # 6. Proses Build
-    - name: Sync & Build
+    # 4. Proses Build (Langsung Lunch & MKA)
+    - name: Build Recovery
       run: |
         cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         
-        # Cek apakah lunch combo valid sebelum build
-        echo "Mencoba lunch omni_zircon-eng..."
-        lunch omni_zircon-eng || {
-            echo "Lunch gagal! Mencoba lunch twrp_zircon-eng sebagai cadangan..."
-            lunch twrp_zircon-eng
-        }
+        # Langsung lunch karena kita sudah yakin filenya ada (terbukti di log sebelumnya)
+        lunch omni_zircon-eng
         
+        # Build menggunakan semua core CPU
         mka adbd recoveryimage -j$(nproc --all)
         
-    # 7. Upload Hasil Build
+    # 5. Upload Hasil Build
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
