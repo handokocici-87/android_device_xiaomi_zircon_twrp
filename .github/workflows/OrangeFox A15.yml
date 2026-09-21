@@ -1,4 +1,4 @@
-name: Build OrangeFox/TWRP Zircon A15
+name: Build OrangeFox Zircon A15 - Fixed
 
 on:
   workflow_dispatch:
@@ -8,14 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    # 1. Bebaskan Ruang Disk
     - name: Free Disk Space
       run: |
         sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
         sudo apt-get clean
         df -h
 
-    # 2. Install Dependencies & Repo Tool
     - name: Build Environment Setup
       run: |
         sudo apt-get update
@@ -31,10 +29,70 @@ jobs:
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
-        
         git config --global user.email "builder@github.com"
         git config --global user.name "GitHub Builder"
 
+    - name: Clone Source & Device Tree
+      run: |
+        mkdir -p $HOME/OrangeFox_Workspace
+        cd $HOME/OrangeFox_Workspace
+        git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
+        cd fox_sync
+        chmod +x orangefox_sync.sh
+        ./orangefox_sync.sh --branch 14.1 --path $HOME/OrangeFox_Workspace/fox_src
+        cd $HOME/OrangeFox_Workspace/fox_src
+        mkdir -p device/xiaomi
+        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
+
+    - name: Fix Storage & Force Lunch Combo
+      run: |
+        DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
+        
+        # 1. Fix Fstab (Storage Issue)
+        FSTAB_FILE=""
+        if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
+            FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
+        elif [ -f "$DT_DIR/recovery/root/fstab.zircon" ]; then
+            FSTAB_FILE="$DT_DIR/recovery/root/fstab.zircon"
+        fi
+        
+        if [ -n "$FSTAB_FILE" ]; then
+            sed -i 's/,noauto//g' "$FSTAB_FILE"
+            sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
+            echo "Fstab fixed for storage mount."
+        fi
+
+        # 2. BYPASS INVALID LUNCH COMBO (PENTING!)
+        # Buat file dummy omni_zircon.mk yang mengarah ke twrp_zircon.mk
+        cat > $DT_DIR/omni_zircon.mk << 'EOF'
+        $(call inherit-product, device/xiaomi/zircon/twrp_zircon.mk)
+        PRODUCT_NAME := omni_zircon
+        PRODUCT_DEVICE := zircon
+        EOF
+        
+        # Tambahkan ke AndroidProducts.mk jika belum ada
+        if ! grep -q "omni_zircon.mk" $DT_DIR/AndroidProducts.mk; then
+            echo '    $(LOCAL_DIR)/omni_zircon.mk \' >> $DT_DIR/AndroidProducts.mk
+            echo '    omni_zircon-eng' >> $DT_DIR/AndroidProducts.mk
+        fi
+        echo "Lunch combo bypass created successfully!"
+
+    - name: Build Recovery
+      run: |
+        cd $HOME/OrangeFox_Workspace/fox_src
+        source build/envsetup.sh
+        
+        # Sekarang lunch omni_zircon-eng PASTI BERJALAN karena kita buat file dummy-nya
+        lunch omni_zircon-eng
+        
+        mka adbd recoveryimage -j$(nproc --all)
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OrangeFox-Zircon-A15-Storage-Fixed
+        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
+        
     # 3. Clone Source & Device Tree
     - name: Clone OrangeFox Source & Device Tree
       run: |
