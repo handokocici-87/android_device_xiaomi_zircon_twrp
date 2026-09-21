@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Fixed
+name: Build OrangeFox Zircon A15 - Standard 12.1
 
 on:
   workflow_dispatch:
@@ -36,15 +36,18 @@ jobs:
       run: |
         mkdir -p $HOME/OrangeFox_Workspace
         cd $HOME/OrangeFox_Workspace
+        
+        # PERUBAHAN PENTING: Menggunakan branch 12.1 sesuai standar
         git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
         cd fox_sync
         chmod +x orangefox_sync.sh
-        ./orangefox_sync.sh --branch 14.1 --path $HOME/OrangeFox_Workspace/fox_src
+        ./orangefox_sync.sh --branch 12.1 --path $HOME/OrangeFox_Workspace/fox_src
+        
         cd $HOME/OrangeFox_Workspace/fox_src
         mkdir -p device/xiaomi
         git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
 
-    - name: Fix Storage & Force Lunch Combo
+    - name: Fix Storage & Prepare Build
       run: |
         DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
         
@@ -59,133 +62,34 @@ jobs:
         if [ -n "$FSTAB_FILE" ]; then
             sed -i 's/,noauto//g' "$FSTAB_FILE"
             sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
-            echo "Fstab fixed for storage mount."
+            echo "Fstab fixed for storage."
         fi
 
-        # 2. BYPASS INVALID LUNCH COMBO (PENTING!)
-        # Buat file dummy omni_zircon.mk yang mengarah ke twrp_zircon.mk
-        cat > $DT_DIR/omni_zircon.mk << 'EOF'
-        $(call inherit-product, device/xiaomi/zircon/twrp_zircon.mk)
-        PRODUCT_NAME := omni_zircon
-        PRODUCT_DEVICE := zircon
-        EOF
-        
-        # Tambahkan ke AndroidProducts.mk jika belum ada
-        if ! grep -q "omni_zircon.mk" $DT_DIR/AndroidProducts.mk; then
-            echo '    $(LOCAL_DIR)/omni_zircon.mk \' >> $DT_DIR/AndroidProducts.mk
-            echo '    omni_zircon-eng' >> $DT_DIR/AndroidProducts.mk
+        # 2. Pastikan nama produk sesuai dengan standar TWRP/OrangeFox 12.1
+        # Biasanya device tree Xiaomi menggunakan prefix 'twrp_'
+        if [ -f "$DT_DIR/twrp_zircon.mk" ]; then
+            echo "Found twrp_zircon.mk, keeping original name."
+            # Tidak perlu rename paksa ke omni_ karena 12.1 lebih toleran
+        elif [ -f "$DT_DIR/omni_zircon.mk" ]; then
+            echo "Found omni_zircon.mk."
         fi
-        echo "Lunch combo bypass created successfully!"
 
     - name: Build Recovery
       run: |
         cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         
-        # Sekarang lunch omni_zircon-eng PASTI BERJALAN karena kita buat file dummy-nya
-        lunch omni_zircon-eng
+        # Coba lunch twrp_zircon-eng dulu (standar device tree Xiaomi)
+        lunch twrp_zircon-eng || {
+            echo "twrp_zircon failed, trying omni_zircon..."
+            lunch omni_zircon-eng
+        }
         
         mka adbd recoveryimage -j$(nproc --all)
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Zircon-A15-Storage-Fixed
-        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
-        
-    # 3. Clone Source & Device Tree
-    - name: Clone OrangeFox Source & Device Tree
-      run: |
-        mkdir -p $HOME/OrangeFox_Workspace
-        cd $HOME/OrangeFox_Workspace
-        
-        git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
-        cd fox_sync
-        chmod +x orangefox_sync.sh
-        ./orangefox_sync.sh --branch 14.1 --path $HOME/OrangeFox_Workspace/fox_src
-        
-        cd $HOME/OrangeFox_Workspace/fox_src
-        mkdir -p device/xiaomi
-        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
-
-    # 4. FIX MASALAH STORAGE (Script Otomatis)
-    - name: Fix Internal Storage Mount Issue
-      run: |
-        DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
-        FSTAB_FILE=""
-        
-        # Cari file fstab (bisa bernama fstab.zircon atau recovery.fstab)
-        if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
-            FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
-        elif [ -f "$DT_DIR/recovery/root/fstab.zircon" ]; then
-            FSTAB_FILE="$DT_DIR/recovery/root/fstab.zircon"
-        fi
-        
-        if [ -n "$FSTAB_FILE" ]; then
-            echo "=== Menemukan fstab: $FSTAB_FILE ==="
-            # Hapus flag 'noauto' jika ada (penyebab utama storage tidak mount otomatis)
-            sed -i 's/,noauto//g' "$FSTAB_FILE"
-            # Pastikan /data memiliki flag fileencryption=metadata untuk Android 14/15
-            sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
-            echo "=== Fstab berhasil diperbaiki untuk fix storage ==="
-            cat "$FSTAB_FILE"
-        else
-            echo "WARNING: File fstab tidak ditemukan! Storage mungkin tetap bermasalah."
-        fi
-
-    # 5. Proses Build (Pakai twrp_zircon karena pasti jalan)
-    - name: Build Recovery
-      run: |
-        cd $HOME/OrangeFox_Workspace/fox_src
-        source build/envsetup.sh
-        
-        # Gunakan twrp_zircon-eng sebagai jalan pintas yang pasti berhasil
-        lunch twrp_zircon-eng
-        
-        mka adbd recoveryimage -j$(nproc --all)
-        
-    # 6. Upload Hasil Build
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: TWRP-Zircon-A15-Fixed-Storage
-        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
-        
-    # 3. Clone Source & Device Tree
-    - name: Clone OrangeFox Source & Device Tree
-      run: |
-        mkdir -p $HOME/OrangeFox_Workspace
-        cd $HOME/OrangeFox_Workspace
-        
-        # Sync OrangeFox 14.1
-        git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
-        cd fox_sync
-        chmod +x orangefox_sync.sh
-        ./orangefox_sync.sh --branch 14.1 --path $HOME/OrangeFox_Workspace/fox_src
-        
-        # Masuk ke folder source
-        cd $HOME/OrangeFox_Workspace/fox_src
-        
-        # Clone device tree zircon (Branch a15 sudah berisi AndroidProducts.mk yang benar)
-        mkdir -p device/xiaomi
-        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
-
-    # 4. Proses Build (Langsung Lunch & MKA)
-    - name: Build Recovery
-      run: |
-        cd $HOME/OrangeFox_Workspace/fox_src
-        source build/envsetup.sh
-        
-        # Langsung lunch karena kita sudah yakin filenya ada (terbukti di log sebelumnya)
-        lunch omni_zircon-eng
-        
-        # Build menggunakan semua core CPU
-        mka adbd recoveryimage -j$(nproc --all)
-        
-    # 5. Upload Hasil Build
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OrangeFox-Recovery-Zircon-A15
+        name: OrangeFox-Zircon-A15-Standard-12.1
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
         
