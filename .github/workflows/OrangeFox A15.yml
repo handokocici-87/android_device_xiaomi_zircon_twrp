@@ -1,4 +1,4 @@
-name: Build OrangeFox Zircon A15 - Indentation Fix
+name: Build OrangeFox Zircon A15 - Syntax Fixed
 
 on:
   workflow_dispatch:
@@ -44,7 +44,7 @@ jobs:
         mkdir -p device/xiaomi
         git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
 
-    - name: Fix Storage & Overwrite omni_zircon.mk
+    - name: Fix Storage & Create MK File
       run: |
         DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
         
@@ -63,8 +63,8 @@ jobs:
         fi
 
         # 2. PERBAIKAN AKAR MASALAH: Timpa isi omni_zircon.mk
-        # PENTING: Semua baris di bawah 'EOF' HARUS memiliki spasi yang sama persis
-        cat > $DT_DIR/omni_zircon.mk << 'EOF'
+        # PENTING: Menggunakan "EOF" (dengan kutip) agar $() tidak dianggap variabel YAML
+        cat > $DT_DIR/omni_zircon.mk << "EOF"
 # Inherit from common OrangeFox configuration
 $(call inherit-product, vendor/omni/config/common.mk)
 
@@ -84,7 +84,7 @@ EOF
         cd $HOME/OrangeFox_Workspace/fox_src
         source build/envsetup.sh
         
-        # Lunch omni_zircon-eng (sekarang filenya sudah valid syntax-nya)
+        # Lunch omni_zircon-eng (sekarang filenya sudah valid)
         lunch omni_zircon-eng
         
         mka adbd recoveryimage -j$(nproc --all)
@@ -92,6 +92,6 @@ EOF
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-Zircon-A15-Indentation-Fixed
+        name: OrangeFox-Zircon-A15-Syntax-Fixed
         path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
         
