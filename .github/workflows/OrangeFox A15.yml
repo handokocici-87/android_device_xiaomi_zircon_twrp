@@ -1,4 +1,4 @@
-name: Build OrangeFox A15
+name: Build OrangeFox/TWRP Zircon A15
 
 on:
   workflow_dispatch:
@@ -35,6 +35,64 @@ jobs:
         git config --global user.email "builder@github.com"
         git config --global user.name "GitHub Builder"
 
+    # 3. Clone Source & Device Tree
+    - name: Clone OrangeFox Source & Device Tree
+      run: |
+        mkdir -p $HOME/OrangeFox_Workspace
+        cd $HOME/OrangeFox_Workspace
+        
+        git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
+        cd fox_sync
+        chmod +x orangefox_sync.sh
+        ./orangefox_sync.sh --branch 14.1 --path $HOME/OrangeFox_Workspace/fox_src
+        
+        cd $HOME/OrangeFox_Workspace/fox_src
+        mkdir -p device/xiaomi
+        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
+
+    # 4. FIX MASALAH STORAGE (Script Otomatis)
+    - name: Fix Internal Storage Mount Issue
+      run: |
+        DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
+        FSTAB_FILE=""
+        
+        # Cari file fstab (bisa bernama fstab.zircon atau recovery.fstab)
+        if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
+            FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
+        elif [ -f "$DT_DIR/recovery/root/fstab.zircon" ]; then
+            FSTAB_FILE="$DT_DIR/recovery/root/fstab.zircon"
+        fi
+        
+        if [ -n "$FSTAB_FILE" ]; then
+            echo "=== Menemukan fstab: $FSTAB_FILE ==="
+            # Hapus flag 'noauto' jika ada (penyebab utama storage tidak mount otomatis)
+            sed -i 's/,noauto//g' "$FSTAB_FILE"
+            # Pastikan /data memiliki flag fileencryption=metadata untuk Android 14/15
+            sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
+            echo "=== Fstab berhasil diperbaiki untuk fix storage ==="
+            cat "$FSTAB_FILE"
+        else
+            echo "WARNING: File fstab tidak ditemukan! Storage mungkin tetap bermasalah."
+        fi
+
+    # 5. Proses Build (Pakai twrp_zircon karena pasti jalan)
+    - name: Build Recovery
+      run: |
+        cd $HOME/OrangeFox_Workspace/fox_src
+        source build/envsetup.sh
+        
+        # Gunakan twrp_zircon-eng sebagai jalan pintas yang pasti berhasil
+        lunch twrp_zircon-eng
+        
+        mka adbd recoveryimage -j$(nproc --all)
+        
+    # 6. Upload Hasil Build
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: TWRP-Zircon-A15-Fixed-Storage
+        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
+        
     # 3. Clone Source & Device Tree
     - name: Clone OrangeFox Source & Device Tree
       run: |
