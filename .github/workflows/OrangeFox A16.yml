@@ -628,10 +628,13 @@ jobs:
             "$RELEASE/OrangeFox-12.1-zircon-Android16-vendor_boot.img" \
             > "$RELEASE/SHA256SUMS.txt"
 
-          cat > "$RELEASE/README.txt" <<'EOF'
-          OrangeFox 12.1 - zircon
-          Redmi Note 13 Pro+
-
+          printf '%s\n' \
+  'OrangeFox 12.1 - zircon' \
+  'Redmi Note 13 Pro+' \
+  'Android 16' \
+  'vendor_boot.img' \
+  > "$RELEASE/README.txt"
+  
           Recovery source:
           OrangeFox 12.1
 
