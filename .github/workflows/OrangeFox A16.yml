@@ -1,99 +1,830 @@
-name: Build OrangeFox Zircon A16 - Anti Fail
+name: Build OrangeFox 12.1 - zircon - Android 16
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  FOX_DIR: ${{ github.workspace }}/fox_src
+  SYNC_DIR: ${{ github.workspace }}/orangefox_sync
+
+  DEVICE_REPO: https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git
+  DEVICE_BRANCH: a15
+  DEVICE_PATH: device/xiaomi/zircon
+  DEVICE_NAME: zircon
+
+  BUILD_TARGET: vendorbootimage
+  LUNCH_TARGET: twrp_zircon-eng
+
 jobs:
+
   build:
-    runs-on: ubuntu-latest
-    
+    name: OrangeFox 12.1 - zircon
+    runs-on: ubuntu-22.04
+
     steps:
-    - name: Free Disk Space
-      run: |
-        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-        sudo apt-get clean
-        df -h
 
-    - name: Build Environment Setup
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
-          gcc-multilib g++-multilib libc6-dev-i386 lib32z1-dev lib32stdc++6 \
-          libncurses6 libncursesw6 x11proto-core-dev libx11-dev lib32z-dev \
-          ccache libgl1-mesa-dev libxml2-utils xsltproc unzip python3 \
-          bc bison cpio lzop pngcrush rsync schedtool squashfs-tools \
-          libssl-dev liblz4-tool imagemagick lib32readline-dev
-        
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
-        git config --global user.email "builder@github.com"
-        git config --global user.name "GitHub Builder"
+      # ============================================================
+      # 1. CHECKOUT USER REPOSITORY
+      # ============================================================
+      - name: Checkout zircon repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Clone Source & Device Tree
-      run: |
-        mkdir -p $HOME/OrangeFox_Workspace
-        cd $HOME/OrangeFox_Workspace
-        git clone --depth=1 -b master https://gitlab.com/OrangeFox/sync.git fox_sync
-        cd fox_sync
-        chmod +x orangefox_sync.sh
-        ./orangefox_sync.sh --branch 12.1 --path $HOME/OrangeFox_Workspace/fox_src
-        cd $HOME/OrangeFox_Workspace/fox_src
-        mkdir -p device/xiaomi
-        git clone https://github.com/handokocici-87/android_device_xiaomi_zircon_twrp.git -b a15 device/xiaomi/zircon
 
-    - name: Fix Storage & Create MK File
-      run: |
-        DT_DIR=$HOME/OrangeFox_Workspace/fox_src/device/xiaomi/zircon
-        
-        # 1. Fix Fstab (Storage Issue)
-        FSTAB_FILE=""
-        if [ -f "$DT_DIR/recovery/root/vendor/etc/fstab.zircon" ]; then
-            FSTAB_FILE="$DT_DIR/recovery/root/vendor/etc/fstab.zircon"
-        elif [ -f "$DT_DIR/recovery/root/fstab.zircon" ]; then
-            FSTAB_FILE="$DT_DIR/recovery/root/fstab.zircon"
-        fi
-        
-        if [ -n "$FSTAB_FILE" ]; then
-            sed -i 's/,noauto//g' "$FSTAB_FILE"
-            sed -i '/\/data/s/fileencryption=.*/fileencryption=metadata/' "$FSTAB_FILE"
-            echo "✅ Fstab fixed for storage mount."
-        fi
+      # ============================================================
+      # 2. SHOW WORKSPACE
+      # ============================================================
+      - name: Check GitHub workspace
+        shell: bash
+        run: |
+          set -euxo pipefail
 
-        # 2. CREATE MK FILE USING PRINTF (100% YAML SAFE)
-        # Kita gunakan printf dengan escape character agar tidak bentrok dengan YAML
-        printf '%s\n' \
-          '# Inherit from common OrangeFox configuration' \
-          '$(call inherit-product, vendor/omni/config/common.mk)' \
-          '' \
-          '# Inherit from zircon device' \
-          '$(call inherit-product, device/xiaomi/zircon/twrp_zircon.mk)' \
-          '' \
-          '# OrangeFox Specifics' \
-          'OF_MAINTAINER := HandokoKicici' \
-          'OF_VERSION := alpha' \
-          'TARGET_RECOVERY_PIXEL_FORMAT := RGBX_8888' \
-          'TW_THEME := portrait_hdpi' \
-          > $DT_DIR/omni_zircon.mk
-        
-        echo "✅ omni_zircon.mk created safely using printf!"
-        cat $DT_DIR/omni_zircon.mk
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "HOME=$HOME"
 
-    - name: Build Recovery
-      run: |
-        cd $HOME/OrangeFox_Workspace/fox_src
-        source build/envsetup.sh
-        
-        # Lunch omni_zircon-eng (file sudah pasti valid)
-        lunch omni_zircon-eng
-        
-        mka adbd recoveryimage -j$(nproc --all)
-        
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: OrangeFox-Zircon-A15-Anti-Fail
-        path: $HOME/OrangeFox_Workspace/fox_src/out/target/product/zircon/recovery.img
-        
+          echo ""
+          echo "Workspace:"
+          pwd
+
+          echo ""
+          ls -lah "$GITHUB_WORKSPACE"
+
+
+      # ============================================================
+      # 3. FREE DISK
+      # ============================================================
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          sudo rm -rf /usr/local/lib/android/sdk/ndk || true
+          sudo rm -rf /usr/local/lib/android/sdk/system-images || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/powershell || true
+
+          echo ""
+          echo "=========================================="
+          echo "DISK SPACE"
+          echo "=========================================="
+
+          df -h
+
+          echo ""
+          echo "Available bytes:"
+          df --output=avail "$GITHUB_WORKSPACE" | tail -1
+
+
+      # ============================================================
+      # 4. INSTALL DEPENDENCIES
+      # ============================================================
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            adb \
+            bc \
+            bison \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            g++-multilib \
+            gcc-multilib \
+            git \
+            gnupg \
+            gperf \
+            imagemagick \
+            lib32ncurses6 \
+            lib32z1 \
+            libc6-dev-i386 \
+            libelf-dev \
+            liblz4-tool \
+            libncurses5-dev \
+            libncurses6 \
+            libncurses-dev \
+            libssl-dev \
+            lzop \
+            m4 \
+            openssl \
+            pngcrush \
+            rsync \
+            schedtool \
+            squashfs-tools \
+            unzip \
+            xsltproc \
+            zip \
+            zlib1g-dev
+
+          echo ""
+          echo "Dependencies installed."
+
+
+      # ============================================================
+      # 5. INSTALL REPO
+      # ============================================================
+      - name: Install repo tool
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          mkdir -p "$HOME/bin"
+
+          curl -fsSL \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/bin/repo"
+
+          chmod +x "$HOME/bin/repo"
+
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+          "$HOME/bin/repo" --version
+
+
+      # ============================================================
+      # 6. CREATE ORANGEFOX DIRECTORIES
+      #
+      # IMPORTANT:
+      # Never cd into fox_src before creating/syncing it.
+      # ============================================================
+      - name: Prepare OrangeFox workspace
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          rm -rf "$FOX_DIR"
+          rm -rf "$SYNC_DIR"
+
+          mkdir -p "$FOX_DIR"
+          mkdir -p "$SYNC_DIR"
+
+          echo "FOX_DIR=$FOX_DIR"
+          echo "SYNC_DIR=$SYNC_DIR"
+
+          test -d "$FOX_DIR"
+          test -d "$SYNC_DIR"
+
+          ls -ld "$FOX_DIR"
+          ls -ld "$SYNC_DIR"
+
+
+      # ============================================================
+      # 7. CLONE ORANGEFOX SYNC SCRIPT
+      # ============================================================
+      - name: Clone OrangeFox sync
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          git clone \
+            --depth=1 \
+            https://gitlab.com/OrangeFox/sync.git \
+            "$SYNC_DIR"
+
+          test -f "$SYNC_DIR/sync/orangefox_sync.sh"
+
+          chmod +x \
+            "$SYNC_DIR/sync/orangefox_sync.sh"
+
+          echo ""
+          echo "=========================================="
+          echo "ORANGEFOX SYNC SCRIPT"
+          echo "=========================================="
+
+          "$SYNC_DIR/sync/orangefox_sync.sh" --help || true
+
+
+      # ============================================================
+      # 8. SYNC ORANGEFOX 12.1
+      # ============================================================
+      - name: Sync OrangeFox 12.1
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          SYNC_SCRIPT="$SYNC_DIR/sync/orangefox_sync.sh"
+
+          test -x "$SYNC_SCRIPT"
+          test -d "$FOX_DIR"
+
+          echo ""
+          echo "=========================================="
+          echo "SYNC ORANGEFOX 12.1"
+          echo "=========================================="
+
+          echo "SYNC_SCRIPT:"
+          echo "$SYNC_SCRIPT"
+
+          echo ""
+          echo "FOX_DIR:"
+          echo "$FOX_DIR"
+
+          "$SYNC_SCRIPT" \
+            --branch 12.1 \
+            --path "$FOX_DIR"
+
+          echo ""
+          echo "=========================================="
+          echo "VERIFY ORANGEFOX SOURCE"
+          echo "=========================================="
+
+          test -d "$FOX_DIR/.repo"
+          test -d "$FOX_DIR/bootable/recovery"
+          test -d "$FOX_DIR/vendor/recovery"
+
+          echo "OrangeFox source OK."
+
+          du -sh "$FOX_DIR"
+
+
+      # ============================================================
+      # 9. CLONE ZIRCON DEVICE TREE
+      # ============================================================
+      - name: Install zircon device tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          mkdir -p "$FOX_DIR/device/xiaomi"
+
+          rm -rf "$FOX_DIR/$DEVICE_PATH"
+
+          git clone \
+            --depth=1 \
+            --branch "$DEVICE_BRANCH" \
+            "$DEVICE_REPO" \
+            "$FOX_DIR/$DEVICE_PATH"
+
+          cd "$FOX_DIR/$DEVICE_PATH"
+
+          echo ""
+          echo "=========================================="
+          echo "ZIRCON DEVICE TREE"
+          echo "=========================================="
+
+          echo "Repository:"
+          git remote -v
+
+          echo ""
+          echo "Branch:"
+          git branch --show-current
+
+          echo ""
+          echo "Commit:"
+          git log -1 --oneline
+
+          echo ""
+          echo "Files:"
+          find . -maxdepth 2 -type f | sort
+
+
+      # ============================================================
+      # 10. VERIFY ZIRCON TREE
+      # ============================================================
+      - name: Verify zircon device tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$FOX_DIR"
+
+          echo ""
+          echo "=========================================="
+          echo "VERIFY REQUIRED FILES"
+          echo "=========================================="
+
+          test -f "$DEVICE_PATH/BoardConfig.mk"
+          test -f "$DEVICE_PATH/AndroidProducts.mk"
+          test -f "$DEVICE_PATH/twrp_zircon.mk"
+
+          echo "Required files:"
+          echo "OK BoardConfig.mk"
+          echo "OK AndroidProducts.mk"
+          echo "OK twrp_zircon.mk"
+
+          if [ -f "$DEVICE_PATH/fox_zircon.mk" ]; then
+            echo "OK fox_zircon.mk"
+          else
+            echo "WARNING: fox_zircon.mk not found"
+          fi
+
+          if [ -f "$DEVICE_PATH/recovery/root/system/etc/recovery.fstab" ]; then
+            echo "OK recovery.fstab"
+          else
+            echo "WARNING: recovery.fstab not found"
+          fi
+
+
+      # ============================================================
+      # 11. AUDIT ZIRCON CONFIGURATION
+      # ============================================================
+      - name: Audit zircon configuration
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$FOX_DIR"
+
+          REPORT="$GITHUB_WORKSPACE/zircon_audit.txt"
+
+          : > "$REPORT"
+
+          {
+            echo "=================================================="
+            echo "REDMI NOTE 13 PRO+ - ZIRCON"
+            echo "ORANGEFOX 12.1 / ANDROID 16 COMPATIBILITY AUDIT"
+            echo "=================================================="
+            echo ""
+
+            echo "Device:"
+            echo "$DEVICE_NAME"
+
+            echo ""
+            echo "Device branch:"
+            echo "$DEVICE_BRANCH"
+
+            echo ""
+            echo "Device path:"
+            echo "$DEVICE_PATH"
+
+            echo ""
+            echo "=================================================="
+            echo "BOARD CONFIG"
+            echo "=================================================="
+
+            sed -n '1,300p' \
+              "$DEVICE_PATH/BoardConfig.mk"
+
+            echo ""
+            echo "=================================================="
+            echo "ANDROID PRODUCTS"
+            echo "=================================================="
+
+            sed -n '1,200p' \
+              "$DEVICE_PATH/AndroidProducts.mk"
+
+            echo ""
+            echo "=================================================="
+            echo "TWRP PRODUCT"
+            echo "=================================================="
+
+            sed -n '1,200p' \
+              "$DEVICE_PATH/twrp_zircon.mk"
+
+            if [ -f "$DEVICE_PATH/fox_zircon.mk" ]; then
+              echo ""
+              echo "=================================================="
+              echo "ORANGEFOX PRODUCT VARIABLES"
+              echo "=================================================="
+
+              sed -n '1,250p' \
+                "$DEVICE_PATH/fox_zircon.mk"
+            fi
+
+            echo ""
+            echo "=================================================="
+            echo "FBE / METADATA"
+            echo "=================================================="
+
+            grep -RniE \
+              'metadata|userdata|/data|/metadata|metadata_encryption|keydirectory|inlinecrypt|fscrypt|fsverity|fileencryption|wrappedkey|TW_INCLUDE_CRYPTO|TW_INCLUDE_FBE|TW_USE_FSCRYPT' \
+              "$DEVICE_PATH" \
+              --include='*.mk' \
+              --include='*.fstab' \
+              --include='*fstab*' \
+              --include='*.rc' \
+              --include='*.prop' \
+              || true
+
+            echo ""
+            echo "=================================================="
+            echo "KEYMASTER / KEYMINT / VOLD"
+            echo "=================================================="
+
+            grep -RniE \
+              'KEYMASTER|KEYMINT|VOLD|FSCRYPT|FBE|DECRYPT|ENCRYPT' \
+              "$DEVICE_PATH" \
+              --include='*.mk' \
+              --include='*.fstab' \
+              --include='*fstab*' \
+              --include='*.rc' \
+              --include='*.prop' \
+              || true
+
+            echo ""
+            echo "=================================================="
+            echo "VENDOR BOOT"
+            echo "=================================================="
+
+            grep -RniE \
+              'BOARD_BOOT_HEADER_VERSION|BOARD_VENDOR_BOOT|VENDOR_BOOT|BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT|RECOVERY_RAMDISK|VENDOR_RAMDISK|vendor_boot' \
+              "$DEVICE_PATH" \
+              --include='*.mk' \
+              --include='*.bp' \
+              --include='*.rc' \
+              || true
+
+            echo ""
+            echo "=================================================="
+            echo "PLATFORM VERSION"
+            echo "=================================================="
+
+            grep -RniE \
+              '^PLATFORM_VERSION|^PLATFORM_VERSION_LAST_STABLE' \
+              "$DEVICE_PATH" \
+              --include='*.mk' \
+              || true
+
+            echo ""
+            echo "=================================================="
+            echo "AUDIT COMPLETE"
+            echo "=================================================="
+
+          } | tee "$REPORT"
+
+
+      # ============================================================
+      # 12. SET ORANGEFOX BUILD VARIABLES
+      # ============================================================
+      - name: Configure OrangeFox variables
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export FOX_BUILD_DEVICE=zircon
+          export FOX_AB_DEVICE=1
+          export FOX_VIRTUAL_AB_DEVICE=1
+
+          # Device tree already specifies Keymaster 4.0.
+          export OF_DEFAULT_KEYMASTER_VERSION=4.0
+
+          echo "FOX_BUILD_DEVICE=$FOX_BUILD_DEVICE" >> "$GITHUB_ENV"
+          echo "FOX_AB_DEVICE=$FOX_AB_DEVICE" >> "$GITHUB_ENV"
+          echo "FOX_VIRTUAL_AB_DEVICE=$FOX_VIRTUAL_AB_DEVICE" >> "$GITHUB_ENV"
+          echo "OF_DEFAULT_KEYMASTER_VERSION=$OF_DEFAULT_KEYMASTER_VERSION" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "=========================================="
+          echo "ORANGEFOX BUILD VARIABLES"
+          echo "=========================================="
+
+          echo "FOX_BUILD_DEVICE=$FOX_BUILD_DEVICE"
+          echo "FOX_AB_DEVICE=$FOX_AB_DEVICE"
+          echo "FOX_VIRTUAL_AB_DEVICE=$FOX_VIRTUAL_AB_DEVICE"
+          echo "OF_DEFAULT_KEYMASTER_VERSION=$OF_DEFAULT_KEYMASTER_VERSION"
+
+
+      # ============================================================
+      # 13. SETUP BUILD ENVIRONMENT
+      # ============================================================
+      - name: Setup OrangeFox build environment
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$FOX_DIR"
+
+          export FOX_BUILD_DEVICE=zircon
+          export FOX_AB_DEVICE=1
+          export FOX_VIRTUAL_AB_DEVICE=1
+          export OF_DEFAULT_KEYMASTER_VERSION=4.0
+          export ALLOW_MISSING_DEPENDENCIES=true
+
+          source build/envsetup.sh
+
+          echo ""
+          echo "=========================================="
+          echo "ANDROID BUILD TOP"
+          echo "=========================================="
+
+          echo "$ANDROID_BUILD_TOP"
+
+          echo ""
+          echo "=========================================="
+          echo "ZIRCON LUNCH TARGETS"
+          echo "=========================================="
+
+          lunch --list 2>/dev/null \
+            | grep -i zircon \
+            || true
+
+
+      # ============================================================
+      # 14. LUNCH
+      # ============================================================
+      - name: Select zircon target
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$FOX_DIR"
+
+          export FOX_BUILD_DEVICE=zircon
+          export FOX_AB_DEVICE=1
+          export FOX_VIRTUAL_AB_DEVICE=1
+          export OF_DEFAULT_KEYMASTER_VERSION=4.0
+          export ALLOW_MISSING_DEPENDENCIES=true
+
+          source build/envsetup.sh
+
+          echo ""
+          echo "=========================================="
+          echo "LUNCH"
+          echo "=========================================="
+
+          lunch "$LUNCH_TARGET"
+
+          echo ""
+          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
+          echo "TARGET_DEVICE=$TARGET_DEVICE"
+          echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
+
+
+      # ============================================================
+      # 15. DISPLAY IMPORTANT CONFIGURATION
+      # ============================================================
+      - name: Display build configuration
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$FOX_DIR"
+
+          echo ""
+          echo "=========================================="
+          echo "BOARD CONFIG"
+          echo "=========================================="
+
+          sed -n '1,250p' \
+            "$DEVICE_PATH/BoardConfig.mk"
+
+          echo ""
+          echo "=========================================="
+          echo "RECOVERY FSTAB"
+          echo "=========================================="
+
+          if [ -f "$DEVICE_PATH/recovery/root/system/etc/recovery.fstab" ]; then
+            sed -n '1,350p' \
+              "$DEVICE_PATH/recovery/root/system/etc/recovery.fstab"
+          fi
+
+
+      # ============================================================
+      # 16. BUILD RECOVERY
+      # ============================================================
+      - name: Build recovery
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          cd "$FOX_DIR"
+
+          export FOX_BUILD_DEVICE=zircon
+          export FOX_AB_DEVICE=1
+          export FOX_VIRTUAL_AB_DEVICE=1
+          export OF_DEFAULT_KEYMASTER_VERSION=4.0
+          export ALLOW_MISSING_DEPENDENCIES=true
+
+          source build/envsetup.sh
+
+          lunch "$LUNCH_TARGET"
+
+          echo ""
+          echo "=========================================="
+          echo "BUILD ORANGEFOX 12.1"
+          echo "=========================================="
+
+          echo "Device: zircon"
+          echo "Android ROM target: Android 16"
+          echo "OrangeFox manifest: 12.1"
+          echo "Build target: vendorbootimage"
+
+          echo ""
+          echo "Build started..."
+          echo ""
+
+          mka \
+            "$BUILD_TARGET" \
+            -j"$(nproc --all)" \
+            ALLOW_MISSING_DEPENDENCIES=true \
+            2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+          test "${PIPESTATUS[0]}" -eq 0
+
+
+      # ============================================================
+      # 17. LOCATE OUTPUT
+      # ============================================================
+      - name: Locate recovery output
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          PRODUCT_DIR="$FOX_DIR/out/target/product/$DEVICE_NAME"
+
+          echo ""
+          echo "=========================================="
+          echo "OUTPUT DIRECTORY"
+          echo "=========================================="
+
+          ls -lah "$PRODUCT_DIR"
+
+          echo ""
+          echo "=========================================="
+          echo "ALL IMAGE FILES"
+          echo "=========================================="
+
+          find "$PRODUCT_DIR" \
+            -maxdepth 1 \
+            -type f \
+            -name '*.img' \
+            -printf '%f %s bytes\n' \
+            | sort
+
+          echo ""
+          echo "=========================================="
+          echo "VENDOR BOOT"
+          echo "=========================================="
+
+          if [ -f "$PRODUCT_DIR/vendor_boot.img" ]; then
+
+            echo "Found:"
+            echo "$PRODUCT_DIR/vendor_boot.img"
+
+            echo "ORANGEFOX_OUTPUT=$PRODUCT_DIR/vendor_boot.img" \
+              >> "$GITHUB_ENV"
+
+          else
+
+            echo ""
+            echo "ERROR:"
+            echo "vendor_boot.img was not produced."
+
+            exit 1
+          fi
+
+
+      # ============================================================
+      # 18. VERIFY IMAGE
+      # ============================================================
+      - name: Verify recovery image
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          IMAGE="$ORANGEFOX_OUTPUT"
+
+          echo ""
+          echo "=========================================="
+          echo "RECOVERY IMAGE"
+          echo "=========================================="
+
+          ls -lh "$IMAGE"
+
+          echo ""
+          echo "FILE:"
+          file "$IMAGE"
+
+          echo ""
+          echo "SHA256:"
+          sha256sum "$IMAGE"
+
+          echo ""
+          echo "FIRST 64 BYTES:"
+          od -An -tx1 -N64 "$IMAGE"
+
+
+      # ============================================================
+      # 19. PACKAGE
+      # ============================================================
+      - name: Package recovery
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          RELEASE="$GITHUB_WORKSPACE/release"
+
+          rm -rf "$RELEASE"
+          mkdir -p "$RELEASE"
+
+          cp \
+            "$ORANGEFOX_OUTPUT" \
+            "$RELEASE/OrangeFox-12.1-zircon-Android16-vendor_boot.img"
+
+          cp \
+            "$GITHUB_WORKSPACE/zircon_audit.txt" \
+            "$RELEASE/zircon_audit.txt"
+
+          cp \
+            "$GITHUB_WORKSPACE/build.log" \
+            "$RELEASE/build.log"
+
+          sha256sum \
+            "$RELEASE/OrangeFox-12.1-zircon-Android16-vendor_boot.img" \
+            > "$RELEASE/SHA256SUMS.txt"
+
+          cat > "$RELEASE/README.txt" <<'EOF'
+OrangeFox 12.1 - zircon
+Redmi Note 13 Pro+
+
+Recovery source:
+OrangeFox 12.1
+
+Target ROM:
+Android 16
+
+Recovery target:
+vendor_boot.img
+
+Device:
+zircon
+
+Device tree:
+android_device_xiaomi_zircon_twrp
+
+Device tree branch:
+a15
+
+Build target:
+twrp_zircon-eng
+vendorbootimage
+
+Vendor boot:
+Header version 4
+
+FBE:
+Enabled
+
+Metadata:
+Supported by the device tree
+
+Keymaster:
+4.0
+
+IMPORTANT:
+This build does not automatically format /data.
+
+This build does not automatically format /metadata.
+
+This build does not disable FBE.
+
+This build does not force DFE.
+
+Do not format /data or /metadata merely because
+internal storage initially shows 0 MB.
+
+First collect recovery logs and inspect:
+- /metadata
+- /data
+- KeyMint/Keymaster
+- vold
+- fscrypt
+- recovery.fstab
+EOF
+
+          echo ""
+          echo "=========================================="
+          echo "RELEASE"
+          echo "=========================================="
+
+          ls -lah "$RELEASE"
+
+
+      # ============================================================
+      # 20. UPLOAD SUCCESS
+      # ============================================================
+      - name: Upload OrangeFox artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeFox-12.1-zircon-Android16
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+
+      # ============================================================
+      # 21. UPLOAD LOGS WHEN BUILD FAILS
+      # ============================================================
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeFox-12.1-zircon-build-diagnostics
+          path: |
+            build.log
+            zircon_audit.txt
+            ${{ env.FOX_DIR }}/out/target/product/zircon/*.img
+          if-no-files-found: warn
+          retention-days: 14
